@@ -486,6 +486,7 @@
     }
     h += `<div class="err" id="fErr"></div><button class="btn" data-act="fsave">${s.saveLabel || 'שמירה'}</button>`;
     if (s.onDelete) h += `<button class="btn ghost" data-act="fdel">${s.deleteLabel || 'מחיקה'}</button>`;
+    if (s.extraDelete) h += `<button class="btn ghost" data-act="fextra">${s.extraDelete.label}</button>`;
     $('sheet').innerHTML = h;
   }
   function readNum(x) { if (x === '' || x == null) return null; const n = C.parseAmount(x); return n == null ? NaN : n; }
@@ -503,6 +504,13 @@
   async function deleteForm(el) {
     if (!el.dataset.sure) { el.dataset.sure = 1; el.textContent = 'ללחוץ שוב לאישור המחיקה'; return; }
     try { await F.spec.onDelete(); closeForm(); toast('נמחק'); afterChange(); } catch (e) { $('fErr').textContent = 'שגיאה: ' + (e.message || e); }
+  }
+
+  async function extraDeleteForm(el) {
+    const x = F.spec.extraDelete;
+    if (!el.dataset.sure) { el.dataset.sure = 1; el.textContent = `ללחוץ שוב לאישור (${x.count()} תנועות יימחקו)`; return; }
+    el.disabled = true;
+    try { const n = await x.run(); closeForm(); toast(`נמחקו ${n} תנועות`); afterChange(); } catch (e) { el.disabled = false; $('fErr').textContent = 'שגיאה: ' + (e.message || e); }
   }
 
   const ownerOpts = () => { const O = owners(); return [['me', O.me], ['spouse', O.spouse], ['joint', O.joint]]; };
@@ -561,7 +569,12 @@
         }
         if (a) await DB.update('accounts', a.id, row); else await DB.insert('accounts', row);
       },
-      onDelete: a ? async () => DB.update('accounts', a.id, { active: false }) : null, deleteLabel: 'הסרת החשבון' });
+      onDelete: a ? async () => DB.update('accounts', a.id, { active: false }) : null, deleteLabel: 'הסרת החשבון',
+      extraDelete: a ? {
+        label: 'מחיקת כל התנועות שיובאו לחשבון זה',
+        count: () => State.transactions.filter(t => t.account_id === a.id && t.source === 'import').length,
+        run: async () => { const ids = State.transactions.filter(t => t.account_id === a.id && t.source === 'import').map(t => t.id); for (const id of ids) await DB.remove('transactions', id); return ids.length; }
+      } : null });
   }
 
   function loanForm(l) {
@@ -705,7 +718,7 @@
     addrec: () => recForm(null), editrec: el => recForm(State.recurring.find(x => x.id === el.dataset.id)),
     addgoal: () => goalForm(null), editgoal: el => goalForm(State.goals.find(x => x.id === el.dataset.id)),
     confirm: el => confirmForm(el.dataset.t, el.dataset.id, el.dataset.d, +el.dataset.amt),
-    fsave: () => saveForm(), fdel: el => deleteForm(el),
+    fsave: () => saveForm(), fdel: el => deleteForm(el), fextra: el => extraDeleteForm(el),
     export: () => exportAll(),
     doimport: async el => {
       const parsed = parseImport(), dup = new Set(State.transactions.map(t => t.import_hash).filter(Boolean));
